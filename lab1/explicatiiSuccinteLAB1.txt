@@ -1,0 +1,132 @@
+Message Channel - trimitatorul si receptorul aparte, comunica doar prin broker, conexiunea fiind configurata automat (avand din start abilitatea de a comunica cu broker-ul).
+----------------------------------------------------------
+a. Serializarea - are loc in momentul expedierii mesajului de catre client, cu marime a buffer-ului cunoscunta de 1024.
+Sender:
+    MESSAGE_TYPE = "publish"
+    
+    CHANNEL = input("Please introduce your channel: ")
+    
+    
+    MESSAGE = input("Please introduce your message: ")
+    
+    MESSAGE_TYPE += str(math.ceil(len(MESSAGE+MESSAGE_TYPE)/BUFFSIZE))
+    
+    DATA = CHANNEL+MESSAGE_TYPE+MESSAGE
+    REAL_BUFFSIZE = BUFFSIZE-len(CHANNEL)-len(MESSAGE_TYPE)
+    
+ 
+    for i in range(math.ceil(len(DATA)/BUFFSIZE)): #Serialize
+        #s.sendall(DATA.encode())
+        
+        DATA = CHANNEL+MESSAGE_TYPE+wrap(MESSAGE,REAL_BUFFSIZE)[i]
+        
+        s.sendall(DATA.encode())
+
+Broker:
+if data.decode().partition(channel)[2].startswith("publish"):
+                      n_msg = int(data.decode().partition("publish")[2][0])
+
+                      for i in range(n_msg): #first char after publish
+----------------------------------------------------------
+b. Schimbarea tematicii are loc prin asigurarea comunicarii in ambele directii de catre receptor - care prin introducerea comenzilor subscribe si unsubscribe urmate de denumirea tematicii.
+
+Broker:
+if data.decode().partition(channel)[2].startswith("subscribe"):
+                     _thread.start_new_thread(handle_client ,(conn, data, channel, ))
+                  if data.decode().partition(channel)[2].startswith("unsubscribe"):
+                     SUBSCRIBERS[channel].remove(conn) 
+
+----------------------------------------------------------
+
+MESSAGE TRANSLATOR:
+Datorita specificului comunicarii (tematici de discutie intre oameni, datele fiind doar de tip text): am introdus posibilitatea de a specifica o limba dorita in care sa fie tradus mesajul initial si apoi expediat catre canal.
+
+  
+                                  for language in LANGUAGES:
+                                      for connection in LANGUAGES[language]:
+                                          if c is connection:
+                                            translator = Translator(from_lang="autodetect", to_lang=language)
+                                            temp = translator.translate(to_send)
+                                            if "PLEASE SELECT TWO DISTINCT LANGUAGES" not in temp:
+                                                to_send = temp
+----------------------------------------------------------
+PUB-SUB PATTERN:
+implementat prin oferirea unui set de canale implicite, la care receiverii se pot conecta pentru a asculta iar senderii pentru a comunica un mesaj.Toate actiunile dorite sunt ambalate impreuna cu mesajul dorit (conform unui protocol) si tratate corespunzator de broker. Conexiunile noi se introduc intrun dictionar, corespunzand la tematica aleasa.
+
+SUBSCRIBERS = {"sports":[],"tv":[],"cooking":[],"errors":[]}
+----------------------------------------------------------
+DEAD MESSAGE CHANNEL - are loc prin pastrarea celor mai recente 3 mesaje trimise in fiecare canal (stocate intr-un dictionar), si expedierea lor fiecarui receiver nou, in urma stabilirii conexiunii. Se introduce o pauza minora pentru a preveni comasarea accidentala a mesajelor.
+
+Broker:
+MESSAGES = {"sports":[],"tv":[],"cooking":[],"errors":[]}
+for message in MESSAGES[channel]:
+        time.sleep(0.1)					#prevent random message-joining
+        try:
+            connection.send(message.encode())
+            
+        except:
+            
+            handle_error(connection, message)
+----------------------------------------------------------
+DEAD LETTER CHANNEL - mesajele trimise, dar care au esuat sa ajunga la destinatie cu succes (din diferite motive) - sunt prelucrate de un algoritm de gestiune a erorilor: 
+def handle_error(connection, message):
+	time.sleep(0.5) #wait half a second
+	try:
+		
+		connection.send(message.encode())
+	except:
+		try:
+			
+			time.sleep(3) #wait 3 seconds
+			connection.send(message.encode())
+		except:
+			#ok -- give up
+			MESSAGES["errors"].append(message)
+            
+			for subscriber in SUBSCRIBERS["errors"]:
+				subscriber.send(message.encode())
+
+-- in cazul ca la sfarsitul prelucrarii mesajului de catre algoritm expedierea sa nu a fost reusita, mesajul se depoziteaza intr-un canal de comunicare special-dedicat: "errors". 
+----------------------------------------------------------
+
+CONTENT-BASED ROUTES - la detectarea automata in cadrul mesajului a unor cuvinte cheie, canalul de expediere a mesajului se schimba automat corespunzator cuvintelor cheie.
+Nota: acest lucru nu este util in cadrul sistemului pub-sub elaborat.
+
+for i in range(n_msg): #first char after publish
+                          if "ball" in data.decode().partition("publish")[2][1:]:
+                              channel = "sports"
+                              
+                              
+                          elif "yum" in data.decode().partition("publish")[2][1:]:
+                              channel = "cooking"
+                          elif "watch" in data.decode().partition("publish")[2][1:]:
+                              channel = "tv"
+
+----------------------------------------------------------
+CONTENT - ENCRICHER - la selectarea unui canal, se citesc datele din baza de date si in caz ca este satisfacuta o conditie (de ex. in mesaj este numele unui jucator) - in mesajul expediat se adauga o clarificare cu datele stocate in baza de date pentru a usura intelegerea utilizatorului.
+
+ if channel is "sports":
+                              cursor.execute("SELECT * FROM sports")
+                              
+                          res = cursor.fetchall()
+                          
+                          
+                                  
+                          for c in SUBSCRIBERS[channel]:
+                              
+                              try:
+                                  to_send = data.decode().partition("publish")[2][1:]
+                                  for pair in res:
+                                      if pair[0] in to_send:
+                                          ind = to_send.index(pair[0])+len(pair[0])
+                                          to_send = to_send[:ind] + " (who plays " + pair[1] + ")" + to_send[ind:]
+
+----------------------------------------------------------
+WIRE - TAP - la pornirea broker-ului este deschis un fisier "write-tap.txt" pentru a efectua un log a tuturor activitatilor efectuate de utilizatorii message-channelului.
+f = open("write-tap.txt", "a+")
+
+while True:
+        if data is not last_data: #ignore repeat-error
+            f.write(time.ctime() + " " + str(addr) + " " + data.decode()+"\n")
+
+----------------------------------------------------------
